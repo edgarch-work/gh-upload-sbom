@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const core = require('@actions/core');
 
 async function run() {
@@ -18,27 +19,37 @@ async function run() {
     const parentVersion = core.getInput('parentversion');
 
     if (protocol !== "http" && protocol !== "https") {
-      throw 'protocol "' + protocol + '" not supported, must be one of: https, http'
+      throw new Error('protocol "' + protocol + '" not supported, must be one of: https, http')
     }
 
     if (project === "" && (projectName === "" || projectVersion === "")) {
-      throw 'project or projectName + projectVersion must be set'
+      throw new Error('project or projectName + projectVersion must be set')
     }
 
     if (!autoCreate && project === "") {
-      throw 'project can\'t be empty if autoCreate is false'
-    }
-
-    if (project === "" && (projectName === "" || projectVersion === "")) {
-      throw 'project or projectName + projectVersion must be set'
+      throw new Error('project can\'t be empty if autoCreate is false')
     }
 
     if ((parentName === "" && parentVersion !== "") || (parentName !== "" && parentVersion === "")) {
-      throw 'parentName + parentVersion must both be set'
+      throw new Error('parentName + parentVersion must both be set')
+    }
+
+    if (port) {
+      const portNum = parseInt(port, 10);
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        throw new Error(`port "${port}" is not a valid port number (must be 1-65535)`)
+      }
+    }
+
+    const workspaceDir = path.resolve(process.env['GITHUB_WORKSPACE'] || process.cwd());
+    const resolvedBomPath = path.resolve(workspaceDir, bomFilename);
+    const relativePath = path.relative(workspaceDir, resolvedBomPath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      throw new Error(`bomfilename "${bomFilename}" must be within the workspace directory`)
     }
 
     core.info(`Reading BOM: ${bomFilename}...`);
-    const bomContents = fs.readFileSync(bomFilename);
+    const bomContents = fs.readFileSync(resolvedBomPath);
     let encodedBomContents = Buffer.from(bomContents).toString('base64');
     if (encodedBomContents.startsWith('77u/')) {
       encodedBomContents = encodedBomContents.substring(4);
@@ -101,7 +112,7 @@ async function run() {
     }
 
   } catch (error) {
-    core.setFailed(error.message);
+    core.setFailed(error.message || String(error));
   }
 }
 
